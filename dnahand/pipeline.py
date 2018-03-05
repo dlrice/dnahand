@@ -1,13 +1,13 @@
 from download import 
 from handprint import handprint
-from utils import *
+import utils
 import os
 import sys
 
 def download_collate_to_vcf_kinship(sample_list_path, out_directory, 
     reference_vcf_pattern, reference_snp_pickle, chromosomes, 
-    vcf_from_plex_bin, bcftools_bin, baton_bin, baton_metaquery_bin, 
-    baton_get_bin, irods_credentials_path=None, n_max_processes=25)
+    vcf_from_plex_bin, bcftools_binbcftools_bin, baton_bin, baton_metaquery_bin, 
+    baton_get_bin, irods_credentials_path=None, n_max_processes=25):
     """
     Args:
         sample_list_path (str): Path to a headerless text file which
@@ -41,10 +41,16 @@ def download_collate_to_vcf_kinship(sample_list_path, out_directory,
                         handprint*.vcf
                     fluidigm/
                         handprint*.vcf
-                vcfs/sequenom_fluidigm_reference.vcf
+                    reference/
+                        reference*.vcf
+                        reference.vcf
+                    sequenom_fluidigm_reference.vcf
+
                 kinship/kinship_results.csv
                 kinship/kinship_results.pickle
     """
+
+    utils.BCFTOOLS_BIN = bcftools_bin
 
     # Make sure directory doesn't already exist - we want to start from
     # fresh.
@@ -89,11 +95,11 @@ def download_collate_to_vcf_kinship(sample_list_path, out_directory,
     os.mkdir(vcf_directory)
     log_directory = os.path.join(out_directory, 'logs')
     os.mkdir(log_directory)
-    vcfs_to_merge = []
     for fingerprint_method in FINGERPRINT_METHODS:
         handprint_method_directory = os.path.join(handprint_directory,
             fingerprint_method)
-        handprints = get_subdirectories(handprint_method_directory)
+        handprints = utils.get_subdirectories(
+            handprint_method_directory)
         n_handprints = len(handprints)
         if not n_handprints:
             print(f'No handprints generated for {fingerprint_method}')
@@ -111,9 +117,8 @@ def download_collate_to_vcf_kinship(sample_list_path, out_directory,
             stdout = os.path.join(log_directory, base + '.o')
             stderr = os.path.join(log_directory, base + '.e')
 
-            run_vcf_from_plex(vcf_from_plex_bin, filelist, chromosomes,
-                fingerprint_method, snpset, vcf_out, stdout, stedrr)
-            run_vcf_from_plex()
+            utils.run_vcf_from_plex(vcf_from_plex_bin, filelist,
+                chromosomes, fingerprint_method, snpset, vcf_out)
 
 
     
@@ -123,16 +128,28 @@ def download_collate_to_vcf_kinship(sample_list_path, out_directory,
         print('Error: No handprint VCFs found to merge.')
         sys.exit(-1)
 
-    reference_vcfs = get_reference_vcfs(reference_vcf_pattern)
+
+    reference_vcf_subset_directory = os.path.join(vcf_directory, 
+        'reference')
+    # Subset reference on only those SNPs seen in all of 
+    # the handprint_vcfs
+    utils.subset_reference_vcfs_on_handprint_snps(handprint_vcfs, 
+        reference_snp_pickle, reference_vcf_pattern, 
+        reference_vcf_subset_directory)
+    subsetted_referenence_vcfs = glob(reference_vcf_subset_directory,
+        '*')
     n_reference_vcfs = len(reference_vcfs)
     print('Found {n_handprint_vcfs} handprint VCFs to merge')
     print('Found {n_reference_vcfs} reference VCFs to merge')
+    referenence_vcf = os.path.join(vcf_directory, 'reference.vcf.gz')
+    utils.concat_vcfs(subsetted_referenence_vcfs, referenence_vcf)
+    vcfs_to_merge = [referenence_vcf] + handprint_vcfs
+    vcfs_to_merge = utils.sort_by_number_of_snps(vcfs_to_merge)
+    vcfs_to_merge = utils.filter_duplicate_individuals(vcfs_to_merge)
 
     # Remove samples in handprints already present in reference - these
     # will be much higher quality in the imputed reference
 
-    # Subset reference on only those SNPs seen in all of 
-    # the handprint_vcfs
 
     # Merge all VCFs
     
