@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 
 FINGERPRINT_METHODS = ['sequenom', 'fluidigm']
 FIRST_CHROMOSOME = 1
@@ -14,19 +15,27 @@ def get_reference_vcfs(reference_vcf_pattern):
     return vcf_paths
 
 
-def run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE):
+def run(command):
     print(f'\nrunning: "{command}"')
-    proc = subprocess.Popen(command, shell=True, stdout=stdout,
-        stderr=stderr)
-    returncode = proc.wait()
-    if returncode != 0:
-        print(f'Failed {command} with return code {returncode}. Exiting')
-        sys.exit(-1)
-        
+    # proc = subprocess.Popen(command, shell=True, stdout=stdout,
+    #     stderr=stderr)
+    # returncode = proc.wait()
+    # if returncode != 0:
+    #     print(f'Failed {command} with return code {returncode}. Exiting')
+    #     sys.exit(-1)
     # (out, err) = proc.communicate()
     # if err:
     #     print(err)
     # return out
+
+    result = subprocess.run(command, shell=True, 
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    if result.returncode != 0:
+        print(result.stderr.decode('utf-8'))
+        sys.exit(result.returncode)
+
+    print(result.stderr.decode('utf-8'))
 
 
 def run_vcf_from_plex(
