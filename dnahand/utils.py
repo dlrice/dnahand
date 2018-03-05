@@ -35,7 +35,7 @@ def run(command):
         print(result.stderr.decode('utf-8'))
         sys.exit(result.returncode)
 
-    print(result.stderr.decode('utf-8'))
+    print(result.stdout.decode('utf-8'))
 
 
 def run_vcf_from_plex(
