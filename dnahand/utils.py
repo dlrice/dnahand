@@ -30,12 +30,10 @@ def run(command):
 
     result = subprocess.run(command, shell=True, 
         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
     if result.returncode != 0:
-        print(result.stderr.decode('utf-8'))
+        print(result.stderr.decode())
         sys.exit(result.returncode)
-
-    print(result.stdout.decode('utf-8'))
+    return result.stdout
 
 
 def run_vcf_from_plex(
@@ -45,7 +43,7 @@ def run_vcf_from_plex(
     command = (f'{vcf_from_plex_bin} --input {filelist}'
         f'--chromosomes {chromosomes} --plex_type {fingerprint_method}'
         f'--snpset {snpset} --vcf {vcf_out}')
-    run(command, stdout, stedrr)
+    run(command)
 
 
 def gzip_vcfs(vcfs, bgzip_bin):
