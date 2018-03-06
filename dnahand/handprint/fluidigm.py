@@ -8,8 +8,8 @@ from utils import *
 
 
 def get_fieldnames():
-    return ['assay', 'snp_assayed', 'x_allele', 'y_allele', 'sample_name', \
-            'type', 'auto', 'confidence', 'final', 'converted_call', \
+    return ['assay', 'snp_assayed', 'x_allele', 'y_allele', 'sample_name',
+            'type', 'auto', 'confidence', 'final', 'converted_call', 
             'x_intensity', 'y_intensity']
 
 

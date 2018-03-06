@@ -84,7 +84,9 @@ def subset_vcf_by_region(vcfin, vcfout, regions, subset_vcf_by_region):
 
 
 def get_sample_ids_from_vcf(vcf):
-    return set(run(f'{BCFTOOLS_BIN} query -l {vcf}').split())
+    sampleids = run(f'{BCFTOOLS_BIN} query -l {vcf}').split()
+    # Get rid of any blank lines.
+    return {sampleid in sampleids if sampleid}
 
 
 def get_snp_data_from_vcf(vcf_path):
@@ -127,7 +129,7 @@ def subset_reference_vcfs_on_handprint_snps(
 
 
 def concat_vcfs(vcf_paths, vcf_out):
-    vcf_paths = ','.join(vcf_paths)
+    vcf_paths = ' '.join(vcf_paths)
     command = f'{BCFTOOLS_BIN} concat {vcf_paths} -Oz -o {vcf_out}'
     run(command)
 
@@ -159,3 +161,30 @@ def sort_by_number_of_snps(vcfs, subset_vcf_by_region):
     key = lambda x: get_number_of_snps_from_vcf(x)
     return sorted(vcfs, key=key, reverse=True)
 
+
+def append_step_to_vcf_path(vcf, step):
+    i = vcf.rfind('.vcf.gz')
+    return vcf[:i+1] + step + vcf[i:]
+
+
+def filter_duplicate_individuals(vcfs):
+    vcfs_processed = []
+    sample_ids_so_far = get_sample_ids_from_vcf(vcfs[0])
+    vcfs_processed.append(vcfs[0])
+    for vcf in vcfs[1:]:
+        sample_ids = get_sample_ids_from_vcf(vcf)
+        overlap = sample_ids_so_far & sample_ids
+        if overlap:
+            vcf_filtered = append_step_to_vcf_path(vcf, 'filtered')
+            overlap = ','.join(overlap)
+            run(f'{bcftools} view -Oz -s ^{overlap} {vcf} '
+                f'-o {vcf_filtered}')
+            vcf = vcf_filtered
+        sample_ids_so_far |= sample_ids
+        vcfs_processed.append(vcf)
+    return vcfs_processed
+
+
+def merge_vcfs(vcf_paths, vcf_out):
+    to_merge = ' '.join(vcf_paths)
+    run(f'{bcftools} merge {to_merge} -o {vcf_out} -Oz')
