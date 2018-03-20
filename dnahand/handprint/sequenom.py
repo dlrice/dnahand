@@ -3,8 +3,16 @@ import os
 from collections import defaultdict
 import sys
 from csv import DictReader, DictWriter
-import snp_reference
+import handprint.snp_reference as snp_reference
+from handprint.utils import get_signature_2_sangerid, write_snpset
 from utils import *
+
+BASE_PAIR_RULE = {
+    'A': 'T',
+    'C': 'G',
+    'G': 'C',
+    'T': 'A',
+}
 
 class FingerprintRowPair(object):
     def __init__(self, fingerprint_rows):
@@ -227,7 +235,7 @@ def generate(
     signature_2_sangerid = get_signature_2_sangerid(
         sangerid_2_bestfingerprintrowpairs)
 
-    print('Found' len(signature_2_sangerid) 'unique snpsets')
+    print(f'Found {len(signature_2_sangerid)} unique snpsets')
     fieldnames = get_fieldnames(fingerprints)
     write_best_merged_fingerprints(signature_2_sangerid, 
         sangerid_2_bestfingerprintrowpairs, fieldnames, out_directory,

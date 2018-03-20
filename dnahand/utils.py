@@ -3,12 +3,12 @@ import subprocess
 import sys
 import functools
 
-FINGERPRINT_METHODS = ['sequenom', 'fluidigm']
+
 FIRST_CHROMOSOME = 1
 LAST_CHROMOSOME = 22
 BCFTOOLS_BIN = '' # Set by pipeline.py
 
-# def get_reference_vcfs(reference_vcf_pattern):
+# def get_reference_vcfs(reference_vcf):
 #     vcf_paths = []
 #     for chromosome in range(FIRST_CHROMOSOME, LAST_CHROMOSOME + 1):
 #         vcf_path = reference_vcf_pattern.format(chromosome)
@@ -34,7 +34,7 @@ def run(command):
         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if result.returncode != 0:
         print(result.stderr.decode(), file=sys.stderr)
-        sys.exit(result.returncode)
+        raise Exception
     return result.stdout.decode()
 
 
@@ -42,23 +42,44 @@ def run_vcf_from_plex(
         vcf_from_plex_bin, filelist, chromosomes, fingerprint_method,
         snpset, vcf_out
     ):
-    command = (f'{vcf_from_plex_bin} --input {filelist}'
-        f'--chromosomes {chromosomes} --plex_type {fingerprint_method}'
+    command = (f'{vcf_from_plex_bin} --input {filelist} '
+        f'--chromosomes {chromosomes} --plex_type {fingerprint_method} '
         f'--snpset {snpset} --vcf {vcf_out}')
     run(command)
 
 
-def gzip_vcfs(vcfs, bgzip_bin):
+def gzip_vcfs(vcfs):
     gzipped = []
+    print(vcfs)
     for vcf in vcfs:
         run(f'bgzip {vcf}') 
         gzipped.append(f'{vcf}.gz')
     return gzipped
 
 
+def index_vcf(vcf):
+    run(f'{BCFTOOLS_BIN} index -f {vcf}')
+
+
 def index_vcfs(vcfs):
     for vcf in vcfs:
-        run(f'{BCFTOOLS_BIN} index -f {vcf}')
+        index_vcf(vcf)
+
+
+def convert_sampleids_to_lowercase_vcf(vcf):
+    sampleids = run(f'{BCFTOOLS_BIN} query -l {vcf}').split()
+    sampleids = {sampleid:sampleid.lower() for sampleid in sampleids if sampleid}
+    sample_file = f'{vcf}.sample_names.txt'
+    outvcf = f'{vcf}.2'
+    with open(sample_file, 'w') as f:
+        for old_id, new_id in sampleids.items():
+            assert ' ' not in new_id
+            assert ' ' not in old_id
+            print(old_id, new_id, file=f)
+    command = f'{BCFTOOLS_BIN} reheader --samples {sample_file} {vcf} -o {outvcf}'
+    run(command)
+    os.remove(sample_file)
+    os.rename(outvcf, vcf)
 
 
 def get_subdirectories(directory):
@@ -66,7 +87,7 @@ def get_subdirectories(directory):
         if os.path.isdir(os.path.join(directory,o))]
 
 
-def subset_vcf_by_region(vcfin, vcfout, regions, subset_vcf_by_region):
+def subset_vcf_by_region(vcfin, vcfout, regions):
     """
     Args:
         vcfin (str): Path to vcf to subset.
@@ -80,18 +101,18 @@ def subset_vcf_by_region(vcfin, vcfout, regions, subset_vcf_by_region):
         Subsetted vcfout is saved.
     """
     regions = ','.join(regions)
-    run(f'{bcftools} view -Oz --regions {regions} {vcfin} -o {vcfout}')
+    run(f'{BCFTOOLS_BIN} view -Oz --regions {regions} {vcfin} -o {vcfout}')
 
 
 def get_sample_ids_from_vcf(vcf):
     sampleids = run(f'{BCFTOOLS_BIN} query -l {vcf}').split()
     # Get rid of any blank lines.
-    return {sampleid in sampleids if sampleid}
+    return {sampleid for sampleid in sampleids if sampleid}
 
 
 def get_snp_data_from_vcf(vcf_path):
     snp_data = {}
-    attributes = '%ID\t%REF\t%ALT\t%CHR\t%POS\n'
+    attributes = '%ID\\t%REF\\t%ALT\\t%CHROM\\t%POS\\n'
     out = run(f'{BCFTOOLS_BIN} query -f "{attributes}" {vcf_path}')
     for line in out.split('\n'):
         if not line:
@@ -107,26 +128,20 @@ def get_snp_data_from_vcf(vcf_path):
 
 
 def subset_reference_vcfs_on_handprint_snps(
-        handprint_vcfs, reference_snp_pickle, reference_vcf_pattern,
-        reference_vcf_subset_directory
+        handprint_vcfs, reference_snp_pickle, reference_vcf_path,
+        subsetted_reference_vcf
     ):
     snp_data = {}
     handprint_rsids = set()
     for handprint_vcf in handprint_vcfs:
-        d = get_rsids_from_vcf(handprint_vcf)
+        d = get_snp_data_from_vcf(handprint_vcf)
         snp_data = {**snp_data, **d}
-    chromosomes = {v['CHR'] for v in snp_data.values()}
-    for chromosome in chromosomes:
-        regions = {v['CHR'] + ':' + v['POS'] for v in snp_data.values()
-            if v['CHR'] == chromosome}
-        if not regions:
-            continue
-        reference_vcf_path = reference_vcf_pattern.format(chromosome)
-        vcf_subset_path = os.path.join(reference_vcf_subset_directory,
-            f'reference{chromosome}.vcf.gz')
-        subset_vcf_by_region(reference_vcf_path, vcf_subset_path,
-            regions)
-
+    
+    regions = {v['CHR'] + ':' + v['POS'] for v in snp_data.values()}
+    assert regions
+    print(regions)
+    subset_vcf_by_region(reference_vcf_path, subsetted_reference_vcf,
+        regions)
 
 def concat_vcfs(vcf_paths, vcf_out):
     vcf_paths = ' '.join(vcf_paths)
@@ -147,9 +162,9 @@ def concat_vcfs(vcf_paths, vcf_out):
 #         intersection = ','.join(intersection)
 #         directory, filename = os.path.split(all_finger_prints_to_date)
 #         temp = os.path.join(directory, 'temp')
-#         run(f'{bcftools} view -Oz -s ^{intersection} {all_finger_prints_to_date} -o {temp}')
+#         run(f'{BCFTOOLS_BIN} view -Oz -s ^{intersection} {all_finger_prints_to_date} -o {temp}')
 #         shutil.move(temp, all_fingerprints_to_date)
-#         run(f'{bcftools} index -f {all_finger_prints_to_date}')
+#         run(f'{BCFTOOLS_BIN} index -f {all_finger_prints_to_date}')
 
 
 @functools.lru_cache(maxsize=None)
@@ -157,27 +172,26 @@ def get_number_of_snps_from_vcf(vcf_path):
     return len(get_snp_data_from_vcf(vcf_path))
 
 
-def sort_by_number_of_snps(vcfs, subset_vcf_by_region):
+def sort_by_number_of_snps(vcfs):
     key = lambda x: get_number_of_snps_from_vcf(x)
     return sorted(vcfs, key=key, reverse=True)
 
 
 def append_step_to_vcf_path(vcf, step):
-    i = vcf.rfind('.vcf.gz')
+    i = vcf.rfind('.vcf')
     return vcf[:i+1] + step + vcf[i:]
 
 
-def filter_duplicate_individuals(vcfs):
+def filter_duplicate_individuals(subsetted_reference_vcf, handprint_vcfs):
     vcfs_processed = []
-    sample_ids_so_far = get_sample_ids_from_vcf(vcfs[0])
-    vcfs_processed.append(vcfs[0])
-    for vcf in vcfs[1:]:
+    sample_ids_so_far = get_sample_ids_from_vcf(subsetted_reference_vcf)
+    for vcf in handprint_vcfs:
         sample_ids = get_sample_ids_from_vcf(vcf)
         overlap = sample_ids_so_far & sample_ids
         if overlap:
             vcf_filtered = append_step_to_vcf_path(vcf, 'filtered')
             overlap = ','.join(overlap)
-            run(f'{bcftools} view -Oz -s ^{overlap} {vcf} '
+            run(f'{BCFTOOLS_BIN} view -O v -s ^{overlap} {vcf} '
                 f'-o {vcf_filtered}')
             vcf = vcf_filtered
         sample_ids_so_far |= sample_ids
@@ -187,4 +201,4 @@ def filter_duplicate_individuals(vcfs):
 
 def merge_vcfs(vcf_paths, vcf_out):
     to_merge = ' '.join(vcf_paths)
-    run(f'{bcftools} merge {to_merge} -o {vcf_out} -Oz')
+    run(f'{BCFTOOLS_BIN} merge {to_merge} -o {vcf_out} -Oz')

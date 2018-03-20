@@ -6,9 +6,9 @@ def read_sangerids(sample_list_path):
         return {x.strip() for x in f.readlines()}
 
 def download_fingerprints(
-        sample_list_path, fingerprints_directory, 
-        fingerprint_method, n_max_processes=25, baton_bin, 
-        baton_metaquery_bin, baton_get_bin
+        sample_list_path, fingerprints_directory, fingerprint_method,
+        baton_bin, baton_metaquery_bin, baton_get_bin,
+        n_max_processes=25,
     ):
     """
     Args:

@@ -1,14 +1,16 @@
-from download import 
-from handprint import handprint
+#!/usr/bin/env python3
+from download import download_fingerprints
+from handprint import fluidigm, sequenom
 import utils
 import os
 import sys
+from glob import glob
 
 def download_collate_to_vcf_kinship(sample_list_path, out_directory, 
-    reference_vcf_pattern, reference_snp_pickle, chromosomes, 
-    vcf_from_plex_bin, bcftools_binbcftools_bin, baton_bin, baton_metaquery_bin, 
-    baton_get_bin, irods_credentials_path=None, n_max_processes=25,
-    entry_point=None):
+    reference_vcf_path, reference_snp_pickle, chromosomes, 
+    vcf_from_plex_bin, bcftools_bin, baton_bin, baton_metaquery_bin, 
+    baton_get_bin, akt, irods_credentials_path=None, n_max_processes=25,
+    pipeline_entry_name='download'):
     """
     Args:
         sample_list_path (str): Path to a headerless text file which
@@ -18,16 +20,15 @@ def download_collate_to_vcf_kinship(sample_list_path, out_directory,
         irods_credentials_path (str, optional): Path to a text file
             containing user's irods password. If not supplied, user will
             be prompted.
-        reference_vcf_pattern (str): Path pattern which when supplied
-            with a chromosome: reference_vcf_pattern.format(chromosome)
-            points to a VCF which will be merged against
+        reference_vcf_path (str): Path to VCF which will be merged
+            against.
         vcf_from_plex_bin (str):
         bcftools_bin (str):
         entry_point (str): The point at which the pipeline starts:
             -download
             -makehandprints
             -makevcf
-            -runkinship
+            -kinship
 
     Returns:
         Creates the following directory structure upon completion:
@@ -47,9 +48,7 @@ def download_collate_to_vcf_kinship(sample_list_path, out_directory,
                         handprint*.vcf.gz
                     fluidigm/
                         handprint*.vcf.gz
-                    reference/
-                        reference*.vcf.gz
-                        reference.vcf.gz
+                    subsetted_reference.vcf.gz
                     all_merged.vcf.gz
 
                 kinship/kinship_results.csv
@@ -57,22 +56,25 @@ def download_collate_to_vcf_kinship(sample_list_path, out_directory,
     """
 
     utils.BCFTOOLS_BIN = bcftools_bin
-    PIPELINE_STEPS = [
+    PIPELINE_STEPS = {
         'download': 0,
         'makehandprints': 1,
         'plex2vcf': 2,
-        'mergevcfs': 3
-        'runkinship': 4,
-    ]
+        'mergevcfs': 3,
+        'kinship': 4,
+    }
+    FINGERPRINT_METHODS = ['sequenom', 'fluidigm']
 
-    assert (PIPELINE_STEPS is None) or (entry_point in PIPELINE_STEPS),
+    assert pipeline_entry_name in PIPELINE_STEPS, \
         'Please specify a valid entry point.'
 
-    pipeline_start = PIPELINE_STEPS.get(entry_point, 0)
+    pipeline_entry = PIPELINE_STEPS.get(pipeline_entry_name, 0)
+
+    print(f'Starting at {pipeline_entry_name} in pipeline.')
 
     fingerprint_directory = os.path.join(out_directory, 'fingerprints')
 
-    if pipeline_start <= PIPELINE_STEPS['download']:
+    if pipeline_entry <= PIPELINE_STEPS['download']:
         # Make sure directory doesn't already exist - we want to start from
         # fresh.
         if os.path.exists(out_directory):
@@ -88,20 +90,21 @@ def download_collate_to_vcf_kinship(sample_list_path, out_directory,
             fingerprint_method_directory = os.path.join(
                 fingerprint_directory,fingerprint_method)
             os.mkdir(fingerprint_method_directory)
-            download_fingerprints(sample_list_path,
-                fingerprint_method_directory, fingerprint_method, 
-                n_max_processes, baton_bin, baton_metaquery_bin, 
-                baton_get_bin)
+            download_fingerprints(sample_list_path, 
+                fingerprints_directory, fingerprint_method,
+                baton_bin, baton_metaquery_bin, baton_get_bin,
+                n_max_processes)
 
+    handprint_directory = os.path.join(out_directory, 'handprints')
     # Generate handprints from downloaded
-    if pipeline_start <= PIPELINE_STEPS['makehandprints']:
-        handprint_directory = os.path.join(out_directory, 'handprints')
+    if pipeline_entry <= PIPELINE_STEPS['makehandprints']:
         os.mkdir(handprint_directory)
         for fingerprint_method in FINGERPRINT_METHODS:
             fingerprint_method_directory = os.path.join(
                 fingerprint_directory,
                 fingerprint_method)
-            handprint_method_directory = os.path.join(handprint_directory,
+            handprint_method_directory = os.path.join(
+                handprint_directory,
                 fingerprint_method)
             if fingerprint_method == 'fluidigm':
                 fluidigm.generate(fingerprint_method_directory,
@@ -110,79 +113,115 @@ def download_collate_to_vcf_kinship(sample_list_path, out_directory,
                 sequenom.generate(fingerprint_method_directory,
                     handprint_method_directory, reference_snp_pickle)
 
-
     vcf_directory = os.path.join(out_directory, 'vcfs')
+    print(vcf_directory)
     # Convert handprints to VCFs
-    if pipeline_start <= PIPELINE_STEPS['plex2vcf']:
+    if pipeline_entry <= PIPELINE_STEPS['plex2vcf']:
         os.mkdir(vcf_directory)
-        log_directory = os.path.join(out_directory, 'logs')
-        os.mkdir(log_directory)
+        # log_directory = os.path.join(out_directory, 'logs')
+        # os.mkdir(log_directory)
         for fingerprint_method in FINGERPRINT_METHODS:
             handprint_method_directory = os.path.join(handprint_directory,
                 fingerprint_method)
             handprints = utils.get_subdirectories(
                 handprint_method_directory)
+
             n_handprints = len(handprints)
             if not n_handprints:
                 print(f'No handprints generated for {fingerprint_method}')
                 continue
+
+            vcf_out_dir = os.path.join(vcf_directory, fingerprint_method)
+            if not os.path.exists(vcf_out_dir):
+                os.makedirs(vcf_out_dir)
+
             for handprint in handprints:
                 filelist = os.path.join(handprint, f'filelist.txt')
                 
                 snpset = os.path.join(handprint, 'snpset.tsv')
-                vcf_filename = f'{handprint}.vcf.gz'
-                vcf_out = os.path.join(vcf_directory, fingerprint_method,
-                    vcf_filename)
+                handprint = os.path.normpath(handprint)
+                handprint = os.path.basename(handprint)
+                vcf_filename = f'{handprint}.vcf'
+                vcf_out = os.path.join(vcf_out_dir, vcf_filename)
+                print(vcf_out)
 
-                # Save output of vcf_from_plex to log files
-                _, this_handprint_directory = os.path.split(handprint)
-                base = f'{fingerprint_method}_{this_handprint_directory}'
-                stdout = os.path.join(log_directory, base + '.o')
-                stderr = os.path.join(log_directory, base + '.e')
+                # # Save output of vcf_from_plex to log files
+                # _, this_handprint_directory = os.path.split(handprint)
+                # base = f'{fingerprint_method}_{this_handprint_directory}'
+                # stdout = os.path.join(log_directory, base + '.o')
+                # stderr = os.path.join(log_directory, base + '.e')
 
                 utils.run_vcf_from_plex(vcf_from_plex_bin, filelist,
                     chromosomes, fingerprint_method, snpset, vcf_out)
+                utils.convert_sampleids_to_lowercase_vcf(vcf_out)
 
     # Merge all VCFs
-    if pipeline_start <= PIPELINE_STEPS['mergevcfs']:
-        handprint_vcfs = glob(vcf_directory, '*', '*')
+    vcf_merged_path = os.path.join(vcf_directory, 'all_merged.vcf.gz')
+    if pipeline_entry <= PIPELINE_STEPS['mergevcfs']:
+        handprint_vcfs = glob(os.path.join(vcf_directory, '*', '*'))
+        print(handprint_vcfs)
         n_handprint_vcfs = len(handprint_vcfs)
         if not n_handprint_vcfs:
             print('Error: No handprint VCFs found to merge.')
             sys.exit(-1)
 
-        reference_vcf_subset_directory = os.path.join(vcf_directory, 
-            'reference')
+        print(f'Found {n_handprint_vcfs} handprint VCFs to merge')
+
+        vcf_subset_path = os.path.join(vcf_directory,
+        f'subsetted_reference.vcf.gz')
+        subsetted_reference_vcf = os.path.join(vcf_directory, 
+            'subsetted_reference.vcf.gz')
         # Subset reference on only those SNPs seen in all of the 
         # handprint_vcfs
-        utils.subset_reference_vcfs_on_handprint_snps(handprint_vcfs, 
-            reference_snp_pickle, reference_vcf_pattern, 
-            reference_vcf_subset_directory)
-        subsetted_referenence_vcfs = glob(reference_vcf_subset_directory,
-            '*')
-        n_reference_vcfs = len(reference_vcfs)
-        print('Found {n_handprint_vcfs} handprint VCFs to merge')
-        print('Found {n_reference_vcfs} reference VCFs to merge')
-        referenence_vcf = os.path.join(vcf_directory, 'reference.vcf.gz')
-        utils.concat_vcfs(subsetted_referenence_vcfs, referenence_vcf)
-        vcfs_to_merge = [referenence_vcf] + handprint_vcfs
+        utils.subset_reference_vcfs_on_handprint_snps(handprint_vcfs,
+            reference_snp_pickle, reference_vcf_path,
+            subsetted_reference_vcf)
+
+        utils.index_vcf(subsetted_reference_vcf)
+        
+        # utils.concat_vcfs(subsetted_referenence_vcfs, referenence_vcf)
+        
         
         # Remove samples in handprints already present in reference - these
         # will be much higher quality in the imputed reference
-        vcfs_to_merge = utils.sort_by_number_of_snps(vcfs_to_merge)
-        vcfs_to_merge = utils.filter_duplicate_individuals(vcfs_to_merge)
 
+        handprint_vcfs = utils.sort_by_number_of_snps(handprint_vcfs)
+        handprint_vcfs = utils.filter_duplicate_individuals(subsetted_reference_vcf, handprint_vcfs)
+        handprint_vcfs = utils.gzip_vcfs(handprint_vcfs)
+        utils.index_vcfs(handprint_vcfs)
+
+
+        vcfs_to_merge = [subsetted_reference_vcf] + handprint_vcfs
         # Merge all VCFs
-        vcf_merged_path = os.path.join(vcf_directory, 'all_merged.vcf.gz')
         utils.merge_vcfs(vcfs_to_merge, vcf_merged_path)
+        utils.index_vcf(vcf_merged_path)
 
     # Run akt
-
+    if pipeline_entry <= PIPELINE_STEPS['kinship']:
+        kinship_directory = os.path.join(out_directory, 'kinship')
+        os.mkdir(kinship_directory)
+        kinship_results = os.path.join(kinship_directory, 'kinship_results.csv')
+        command = f'{akt} kin --method 0 {vcf_merged_path} --force --minkin {0.1} > {kinship_results}'
+        utils.run(command)
 
 
 def main():
-    download.print_message('hi')
-    handprint.handprint()
+    download_collate_to_vcf_kinship(
+        sample_list_path='',
+        out_directory='/lustre/scratch115/teams/barrett/users/dr9/dnahand-out-complete',
+        reference_vcf_path='/lustre/scratch115/realdata/mdt0/teams/barrett/users/dr9/new_imputation_dan/all_studies.sampleids_cleaned_to_lowercase.bcf.gz',
+        reference_snp_pickle='/nfs/team143/fingerprint_resources/all_rsids_in_imputed_datasets.pickle',
+        chromosomes='/nfs/team143/fingerprint_resources/chromosome_lengths_GRCh37.json',
+        vcf_from_plex_bin='module load genotyping/1.14.2; /software/gapi/pkg/genotyping/1.14.2/bin/vcf_from_plex.pl',
+        bcftools_bin='/software/hgi/pkglocal/bcftools-1.6-htslib-1.6-htslib-plugins-6f2229e0-irods-git-4.2.2-plugin_kerberos-2.0.0/bin-wrap/bcftools',
+        baton_bin='/software/solexa/pkg/baton/0.17.1/bin/baton',
+        baton_metaquery_bin='/software/solexa/pkg/baton/0.17.1/bin/baton-metaquery',
+        baton_get_bin='/software/solexa/pkg/baton/0.17.1/bin/baton-get',
+        irods_credentials_path='/nfs/users/nfs_d/dr9/.temp',
+        pipeline_entry_name='mergevcfs',
+        akt='/nfs/team143/akt/akt'
+    )
+
 
 if __name__ == '__main__':
     main()

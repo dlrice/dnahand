@@ -3,9 +3,16 @@ import os
 from collections import defaultdict
 import sys
 from csv import DictReader, DictWriter
-import snp_reference
+import handprint.snp_reference as snp_reference
+from handprint.utils import get_signature_2_sangerid, write_snpset
 from utils import *
 
+BASE_PAIR_RULE = {
+    'A': 'T',
+    'C': 'G',
+    'G': 'C',
+    'T': 'A',
+}
 
 def get_fieldnames():
     return ['assay', 'snp_assayed', 'x_allele', 'y_allele', 'sample_name',
@@ -123,6 +130,12 @@ def write_best_merged_fingerprints(
         with open(filelist, 'w') as f:
             f.write('\n'.join(paths))
 
+def get_signature_2_sangerid(sangerid_2_bestfingerprintrowpairs):
+    signature_2_sangerid = defaultdict(set)
+    for sangerid, bestfingerprintrowpairs in sangerid_2_bestfingerprintrowpairs.items():
+        signature = tuple(sorted([x.get_rsid() for x in bestfingerprintrowpairs]))
+        signature_2_sangerid[signature].add(sangerid)
+    return signature_2_sangerid
 
 def generate(
         fingerprints_directory,
