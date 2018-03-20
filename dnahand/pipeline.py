@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 from download import download_fingerprints
 from handprint import fluidigm, sequenom
 import utils
@@ -203,25 +202,3 @@ def download_collate_to_vcf_kinship(sample_list_path, out_directory,
         kinship_results = os.path.join(kinship_directory, 'kinship_results.csv')
         command = f'{akt} kin --method 0 {vcf_merged_path} --force --minkin {0.1} > {kinship_results}'
         utils.run(command)
-
-
-def main():
-    download_collate_to_vcf_kinship(
-        sample_list_path='',
-        out_directory='/lustre/scratch115/teams/barrett/users/dr9/dnahand-out-complete',
-        reference_vcf_path='/lustre/scratch115/realdata/mdt0/teams/barrett/users/dr9/new_imputation_dan/all_studies.sampleids_cleaned_to_lowercase.bcf.gz',
-        reference_snp_pickle='/nfs/team143/fingerprint_resources/all_rsids_in_imputed_datasets.pickle',
-        chromosomes='/nfs/team143/fingerprint_resources/chromosome_lengths_GRCh37.json',
-        vcf_from_plex_bin='module load genotyping/1.14.2; /software/gapi/pkg/genotyping/1.14.2/bin/vcf_from_plex.pl',
-        bcftools_bin='/software/hgi/pkglocal/bcftools-1.6-htslib-1.6-htslib-plugins-6f2229e0-irods-git-4.2.2-plugin_kerberos-2.0.0/bin-wrap/bcftools',
-        baton_bin='/software/solexa/pkg/baton/0.17.1/bin/baton',
-        baton_metaquery_bin='/software/solexa/pkg/baton/0.17.1/bin/baton-metaquery',
-        baton_get_bin='/software/solexa/pkg/baton/0.17.1/bin/baton-get',
-        irods_credentials_path='/nfs/users/nfs_d/dr9/.temp',
-        pipeline_entry_name='mergevcfs',
-        akt='/nfs/team143/akt/akt'
-    )
-
-
-if __name__ == '__main__':
-    main()

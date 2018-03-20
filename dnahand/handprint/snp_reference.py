@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from handprint.utils import run
+from utils import run
 import pickle
 
 def create_pickle(vcf_path, bcftools):
@@ -26,17 +26,3 @@ def save_pickle(snp_reference, pickle_dest):
 def load_pickle(pickle_path):
     with open (pickle_path, 'rb') as f:
         return pickle.load(f)
-
-
-def main():
-    snp_reference = create_pickle(
-        vcf_path='/lustre/scratch115/realdata/mdt0/teams/barrett/users/dr9/new_imputation_dan/all_studies.sampleids_cleaned_to_lowercase.bcf.gz',
-        bcftools='/software/hgi/pkglocal/bcftools-1.6-htslib-1.6-htslib-plugins-6f2229e0-irods-git-4.2.2-plugin_kerberos-2.0.0/bin-wrap/bcftools'
-    )
-    save_pickle(snp_reference,
-        pickle_dest='/lustre/scratch115/realdata/mdt0/teams/barrett/users/dr9/new_imputation_dan/snp_data_all_studies.pickle'
-    )
-
-
-if __name__ == '__main__':
-    main()
