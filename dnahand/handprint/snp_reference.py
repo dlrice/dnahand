@@ -36,7 +36,7 @@ def read_snp_data_from_textfile(snp_data_path):
                 'REF': REF,
                 'ALT': ALT,
                 'CHR': CHR,
-                'POS': POS,
+                'POS': int(POS), # Also gets rid of trailing whitespace
             }
         return snp_data
 
