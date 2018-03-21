@@ -1,5 +1,6 @@
 from download import download_fingerprints
 from handprint import fluidigm, sequenom
+from analysis import generate_missingness_stats, generate_LD_stats, generate_MAF_stats
 import utils
 import os
 import sys
@@ -8,7 +9,7 @@ from glob import glob
 def download_collate_to_vcf_kinship(sample_list_path, out_directory, 
     reference_vcf_path, reference_snp_pickle, chromosomes, 
     vcf_from_plex_bin, bcftools_bin, baton_bin, baton_metaquery_bin, 
-    baton_get_bin, akt, irods_credentials_path=None, n_max_processes=25,
+    baton_get_bin, akt, plink, irods_credentials_path=None, n_max_processes=25,
     pipeline_entry_name='download'):
     """
     Args:
@@ -47,9 +48,9 @@ def download_collate_to_vcf_kinship(sample_list_path, out_directory,
                         handprint*.vcf.gz
                     fluidigm/
                         handprint*.vcf.gz
-                    subsetted_reference.vcf.gz
-                    all_merged.vcf.gz
-
+                    handprints.vcf.gz(.csi)
+                    subsetted_reference.vcf.gz(.csi)
+                    all_merged.vcf.gz(.csi)
                 kinship/kinship_results.csv
                 kinship/kinship_results.pickle
     """
@@ -57,7 +58,13 @@ def download_collate_to_vcf_kinship(sample_list_path, out_directory,
 
     """
     TODO
-    1. 
+    1. Generate plink MAF stats / LD / missingness stats for:
+        1. handprints.vcf.gz
+        2. subsetted_reference.vcf.gz
+        3. all_merged.vcf.gz
+    2. Determine how much the handprints stuff actually helps. How many
+       times does one individual have multiple fingerprints?
+    3. Plot 
     """
 
     utils.BCFTOOLS_BIN = bcftools_bin
@@ -189,17 +196,35 @@ def download_collate_to_vcf_kinship(sample_list_path, out_directory,
         
         # Remove samples in handprints already present in reference - these
         # will be much higher quality in the imputed reference
-
-        handprint_vcfs = utils.sort_by_number_of_snps(handprint_vcfs)
         handprint_vcfs = utils.filter_duplicate_individuals(subsetted_reference_vcf, handprint_vcfs)
         handprint_vcfs = utils.gzip_vcfs(handprint_vcfs)
         utils.index_vcfs(handprint_vcfs)
 
 
-        vcfs_to_merge = [subsetted_reference_vcf] + handprint_vcfs
+        # Create a VCF of all handprints to print MAF/LD/missing stats
+        vcf_merged_handprints_path = os.path.join(vcf_directory, 
+            'handprints.vcf.gz')
+        utils.merge_vcfs(handprint_vcfs, vcf_merged_handprints_path)
+        utils.index_vcf(vcf_merged_handprints_path)
+
+        vcfs_to_merge = [
+            subsetted_reference_vcf,
+            vcf_merged_handprints_path
+        ]
+
         # Merge all VCFs
         utils.merge_vcfs(vcfs_to_merge, vcf_merged_path)
         utils.index_vcf(vcf_merged_path)
+
+        # Generate stats
+        vcfs = vcfs_to_merge + [vcf_merged_path]
+
+        for vcf in vcfs:
+            i = vcf.rfind('.vcf')
+            out = vcf[:i]
+            generate_missingness_stats(vcf, plink, out)
+            generate_LD_stats(vcf, plink, out)
+            generate_MAF_stats(vcf, plink, out)
 
     # Run akt
     if pipeline_entry <= PIPELINE_STEPS['kinship']:

@@ -183,7 +183,8 @@ def append_step_to_vcf_path(vcf, step):
 
 
 def filter_duplicate_individuals(subsetted_reference_vcf, handprint_vcfs):
-    vcfs_processed = []
+    handprint_vcfs = sort_by_number_of_snps(handprint_vcfs)
+    handprint_vcfs_processed = []
     sample_ids_so_far = get_sample_ids_from_vcf(subsetted_reference_vcf)
     for vcf in handprint_vcfs:
         sample_ids = get_sample_ids_from_vcf(vcf)
@@ -195,10 +196,19 @@ def filter_duplicate_individuals(subsetted_reference_vcf, handprint_vcfs):
                 f'-o {vcf_filtered}')
             vcf = vcf_filtered
         sample_ids_so_far |= sample_ids
-        vcfs_processed.append(vcf)
-    return vcfs_processed
+        handprint_vcfs_processed.append(vcf)
+    return handprint_vcfs_processed
 
 
 def merge_vcfs(vcf_paths, vcf_out):
     to_merge = ' '.join(vcf_paths)
     run(f'{BCFTOOLS_BIN} merge {to_merge} -o {vcf_out} -Oz')
+
+
+# def prune_by_LD(vcf_path):
+#     i = vcf_path.rfind('.vcf')
+#     out = vcf_path[:i]
+#     command = f'{plink} --indep-pairwise 50 5 0.2 --vcf {vcf} --out {out}'
+#     run(command)
+#     exclude = f'{out}.prune.out'
+#     command = f'{plink} --exclude {exclude} --vcf {vcf} --recode vcf bgz --out'
