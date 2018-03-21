@@ -54,6 +54,12 @@ def download_collate_to_vcf_kinship(sample_list_path, out_directory,
                 kinship/kinship_results.pickle
     """
 
+
+    """
+    TODO
+    1. 
+    """
+
     utils.BCFTOOLS_BIN = bcftools_bin
     PIPELINE_STEPS = {
         'download': 0,
