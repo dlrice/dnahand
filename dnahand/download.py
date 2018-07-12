@@ -2,13 +2,13 @@ import subprocess
 import os
 
 def read_sangerids(sample_list_path):
-    with open(path) as f:
-        return {x.strip() for x in f.readlines()}
+    with open(sample_list_path) as f:
+        return {x.strip() for x in f.readlines() if x}
 
 def download_fingerprints(
         sample_list_path, fingerprints_directory, fingerprint_method,
-        baton_bin, baton_metaquery_bin, baton_get_bin,
-        n_max_processes=25,
+        baton_bin, baton_metaquery_bin, baton_get_bin, 
+        irods_credentials_path, n_max_processes=25,
     ):
     """
     Args:
@@ -35,7 +35,10 @@ def download_fingerprints(
     sangerids = read_sangerids(sample_list_path)
     print(f'...found {len(sangerids)} Sanger IDs')
 
-    os.mkdir(fingerprints_directory)
+    login_to_irods(irods_credentials_path)
+
+    fingerprints_directory = os.path.join(fingerprints_directory, fingerprint_method)
+    os.makedirs(fingerprints_directory)
     os.chdir(fingerprints_directory)
     processes = set()
 
@@ -53,6 +56,10 @@ def download_fingerprints(
        p.wait()
     
 
-# baton = '/software/solexa/pkg/baton/0.17.1/bin/baton'
-# baton_metaquery = '/software/solexa/pkg/baton/0.17.1/bin/baton-metaquery'
-# baton_get = '/software/solexa/pkg/baton/0.17.1/bin/baton-get'
+def login_to_irods(path=None):
+    if path:
+        with open(path) as f:
+            password = f.readline().strip()
+        os.system('kinit <<< {}'.format(password))
+    else:
+        os.system('kinit <<< {}'.format(getpass('enter kinit password: ')))

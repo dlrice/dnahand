@@ -2,11 +2,16 @@ import os
 import subprocess
 import sys
 import functools
+import pandas as pd
 
+import pdb
+
+FINGERPRINT_METHODS = ['sequenom', 'fluidigm']
 
 FIRST_CHROMOSOME = 1
 LAST_CHROMOSOME = 22
 BCFTOOLS_BIN = '' # Set by pipeline.py
+PLINK_BIN = '' # Set by pipeline.py
 
 # def get_reference_vcfs(reference_vcf):
 #     vcf_paths = []
@@ -191,8 +196,12 @@ def filter_duplicate_individuals(subsetted_reference_vcf, handprint_vcfs):
         overlap = sample_ids_so_far & sample_ids
         if overlap:
             vcf_filtered = append_step_to_vcf_path(vcf, 'filtered')
-            overlap = ','.join(overlap)
-            run(f'{BCFTOOLS_BIN} view -O v -s ^{overlap} {vcf} '
+            # overlap = ','.join(overlap)
+
+            exclude_path = f'{vcf}.exclude.txt'
+            with open(exclude_path, 'w') as f:
+                f.write('\n'.join(overlap))
+            run(f'{BCFTOOLS_BIN} view -O v -S ^{exclude_path} {vcf} '
                 f'-o {vcf_filtered}')
             vcf = vcf_filtered
         sample_ids_so_far |= sample_ids
@@ -205,10 +214,59 @@ def merge_vcfs(vcf_paths, vcf_out):
     run(f'{BCFTOOLS_BIN} merge {to_merge} -o {vcf_out} -Oz')
 
 
-# def prune_by_LD(vcf_path):
-#     i = vcf_path.rfind('.vcf')
-#     out = vcf_path[:i]
-#     command = f'{plink} --indep-pairwise 50 5 0.2 --vcf {vcf} --out {out}'
-#     run(command)
-#     exclude = f'{out}.prune.out'
-#     command = f'{plink} --exclude {exclude} --vcf {vcf} --recode vcf bgz --out'
+def prune_by_rsid(vcf_path, exclude_path):
+    i = vcf_path.rfind('.vcf.gz')
+    out = vcf_path[:i]
+    pruned_vcf_path = f'{out}.pruned.vcf.gz'
+    regions = get_regions(vcf_path, exclude_path)
+    command = f'{BCFTOOLS_BIN} view {vcf_path} -t ^{regions} -o {pruned_vcf_path} -Oz'
+    run(command)
+
+    prepruned_vcf_path = f'{out}.prepruned.vcf.gz'
+
+    os.rename(vcf_path, prepruned_vcf_path)
+    os.rename(pruned_vcf_path, vcf_path)
+
+
+def include_by_region_file(vcf_path, include_path):
+    i = vcf_path.rfind('.vcf.gz')
+    out = vcf_path[:i]
+    pruned_vcf_path = f'{out}.pruned.vcf.gz'
+    command = f'{BCFTOOLS_BIN} view {vcf_path} -T {include_path} -o {pruned_vcf_path} -Oz'
+    run(command)
+
+    prepruned_vcf_path = f'{out}.prepruned.vcf.gz'
+
+    os.rename(vcf_path, prepruned_vcf_path)
+    os.rename(pruned_vcf_path, vcf_path)
+
+
+
+def get_LD_prune_list(vcf_path):
+    i = vcf_path.rfind('.vcf')
+    out = vcf_path[:i]
+    command = f'{PLINK_BIN} --indep-pairwise 50 5 0.2 --vcf {vcf_path} --out {out}'
+    run(command)
+    return f'{out}.prune.out'
+
+
+def get_MAF_exclude_list(frq_path, out_path, maf_min=0.05):
+    df = pd.read_csv(frq_path, sep=r'\s+', engine='python')
+    subsetted = df[df['MAF'] <= maf_min] 
+    subsetted.to_csv(out_path, index=False, columns=['SNP'], header=False)
+
+
+def get_regions(vcf_path, rsids_exclude_path):
+    with open(rsids_exclude_path) as f:
+        rsids = [x.strip() for x in f.readlines()]
+    lines = run((f'{BCFTOOLS_BIN} query -f "%ID\\t%CHROM\\t%POS\\n" '
+        f'{vcf_path}'))
+    regions = []
+    for line in lines.split('\n'):
+        if not line:
+            continue
+        ID, CHROM, POS = line.split('\t')
+        if ID in rsids:
+            regions.append(f'{CHROM}:{POS}')
+
+    return ','.join(regions)

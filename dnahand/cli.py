@@ -2,6 +2,9 @@
 from pipeline import download_collate_to_vcf_kinship
 import handprint.snp_reference
 import argparse
+from download import download_fingerprints
+from utils import FINGERPRINT_METHODS
+import os
 
 def main():
     # download_collate_to_vcf_kinship(
@@ -22,13 +25,14 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('task',
-        choices=['pipeline', 'save_kinship_frequency_pickle', 'generate_snp_data_pickle'])
+        choices=['pipeline', 'save_kinship_frequency_pickle', 'generate_snp_data_pickle', 'download'])
 
     # pipeline arguments
     parser.add_argument('--sample_list_path')
     parser.add_argument('--out_directory')
     parser.add_argument('--reference_vcf_path')
     parser.add_argument('--reference_snp_pickle')
+    parser.add_argument('--info_include_path')
     parser.add_argument('--chromosomes')
     parser.add_argument('--vcf_from_plex_bin')
     parser.add_argument('--bcftools_bin')
@@ -38,15 +42,16 @@ def main():
     parser.add_argument('--irods_credentials_path')
     parser.add_argument('--pipeline_entry_name')
     parser.add_argument('--akt')
-    parser.add_argument('--plink')
+    parser.add_argument('--plink_bin')
 
     # generate_snp_data_pickle arguments
     # --reference-vcf-path
     parser.add_argument('--snp_data_dest')
     parser.add_argument('--snp_data_pickle_dest')
 
-    args = parser.parse_args()
+    parser.add_argument('--fingerprints_directory')
 
+    args = parser.parse_args()
 
     if args.task == 'generate_snp_data_pickle':
         # handprint.snp_reference.create_snp_data_textfile(
@@ -66,6 +71,7 @@ def main():
             out_directory=args.out_directory,
             reference_vcf_path=args.reference_vcf_path,
             reference_snp_pickle=args.reference_snp_pickle,
+            info_include_path=args.info_include_path,
             chromosomes=args.chromosomes,
             vcf_from_plex_bin=args.vcf_from_plex_bin,
             bcftools_bin=args.bcftools_bin,
@@ -75,8 +81,22 @@ def main():
             irods_credentials_path=args.irods_credentials_path,
             pipeline_entry_name=args.pipeline_entry_name,
             akt=args.akt,
-            plink=args.plink
+            plink_bin=args.plink_bin
         )
+
+    elif args.task == 'download':
+        fingerprints_directory = os.path.join(args.out_directory, 
+                'fingerprints')
+        for fingerprint_method in FINGERPRINT_METHODS:
+            download_fingerprints(
+                sample_list_path=args.sample_list_path,
+                fingerprints_directory=fingerprints_directory,
+                fingerprint_method=fingerprint_method,
+                baton_bin=args.baton_bin,
+                baton_metaquery_bin=args.baton_metaquery_bin,
+                baton_get_bin=args.baton_get_bin,
+                irods_credentials_path=args.irods_credentials_path,
+            )
 
 
 if __name__ == '__main__':
