@@ -25,9 +25,10 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('task',
-        choices=['pipeline', 'save_kinship_frequency_pickle', 'generate_snp_data_pickle', 'download'])
+        choices=['pipeline', 'save_kinship_frequency_pickle', 'generate_snp_data_pickle', 'download', 'update'])
 
     # pipeline arguments
+    parser.add_argument('--sample_lists_to_download_directory')
     parser.add_argument('--sample_list_path')
     parser.add_argument('--out_directory')
     parser.add_argument('--reference_vcf_path')
@@ -97,6 +98,24 @@ def main():
                 baton_get_bin=args.baton_get_bin,
                 irods_credentials_path=args.irods_credentials_path,
             )
+
+    elif args.task == 'update':
+        download_collate_to_vcf_kinship(
+            sample_lists_to_download_directory=args.sample_lists_to_download_directory,
+            out_directory=args.out_directory,
+            reference_vcf_path=args.reference_vcf_path,
+            reference_snp_pickle=args.reference_snp_pickle,
+            info_include_path=args.info_include_path,
+            chromosomes=args.chromosomes,
+            vcf_from_plex_bin=args.vcf_from_plex_bin,
+            bcftools_bin=args.bcftools_bin,
+            baton_bin=args.baton_bin,
+            baton_metaquery_bin=args.baton_metaquery_bin,
+            baton_get_bin=args.baton_get_bin,
+            irods_credentials_path=args.irods_credentials_path,
+            akt=args.akt,
+            plink_bin=args.plink_bin
+        )
 
 
 if __name__ == '__main__':

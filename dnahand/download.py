@@ -1,9 +1,75 @@
 import subprocess
 import os
+import utils
+import hashlib
+import json
+
+class Sanger_Sample_List_iRODS_DB(object):
+    def __init__(self, db_path):
+        self.db_path = db_path
+        if os.path.exists(db_path):
+            with open(db_path) as f:
+                self.db = json.load(f)
+        else:
+             self.db = {}
+
+    def is_sanger_sample_list_seen(self, sanger_sample_list_path):
+        path_hash = self.get_sha512_for_file(sanger_sample_list_path)
+        return path_hash in self.db
+
+    def set_sanger_sample_list_seen(self, sanger_sample_list_path):
+        path_hash = self.get_sha512_for_file(sanger_sample_list_path)
+        self.db[path_hash] = True
+
+    def get_sha512_for_file(self, filepath):
+        sha512 = hashlib.sha512()
+        with open(filepath, 'rb') as f:
+            sha512.update(f.read())
+        return sha512.hexdigest()
+
+    def close_db(self):
+        with open(self.db_path, 'w') as f:
+            json.dump(self.db, f)
+
+def digest_sample_lists_directory(
+        directory, sample_list_irods_db_path, fingerprints_directory, 
+        baton_bin, baton_metaquery_bin, 
+        baton_get_bin, irods_credentials_path, n_max_processes=25):
+    """
+    1. Get the directory of files that list the sample ids to download.
+    2. For all files that have not been seen before, download and update shelve
+    3. 
+    """
+    db = Sanger_Sample_List_iRODS_DB(sample_list_irods_db_path)
+
+    for fingerprint_method in utils.FINGERPRINT_METHODS:
+        fingerprint_method_directory = os.path.join(
+            fingerprints_directory, fingerprint_method)
+        os.makedirs(fingerprint_method_directory, exist_ok=True)
+
+    dir_contents = os.listdir(directory)
+    for file in dir_contents:
+        file = os.path.join(directory, file)
+        if not os.path.isfile(file):
+            print(file, ' is not a file')
+        if not db.is_sanger_sample_list_seen(file):
+            # for fingerprint_method in utils.FINGERPRINT_METHODS:
+            for fingerprint_method in ['fluidigm']:
+                fingerprint_method_directory = os.path.join(
+                    fingerprints_directory, fingerprint_method)
+                download_fingerprints(file,
+                    fingerprint_method_directory, fingerprint_method,
+                    baton_bin, baton_metaquery_bin, baton_get_bin,
+                    irods_credentials_path, n_max_processes)
+            db.set_sanger_sample_list_seen(file)
+
+    db.close_db()
+
 
 def read_sangerids(sample_list_path):
     with open(sample_list_path) as f:
         return {x.strip() for x in f.readlines() if x}
+
 
 def download_fingerprints(
         sample_list_path, fingerprints_directory, fingerprint_method,
@@ -37,8 +103,8 @@ def download_fingerprints(
 
     login_to_irods(irods_credentials_path)
 
-    fingerprints_directory = os.path.join(fingerprints_directory, fingerprint_method)
-    os.makedirs(fingerprints_directory)
+    # fingerprints_directory = os.path.join(fingerprints_directory, fingerprint_method)
+    os.makedirs(fingerprints_directory, exist_ok=True)
     os.chdir(fingerprints_directory)
     processes = set()
 

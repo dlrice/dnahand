@@ -1,4 +1,4 @@
-from download import download_fingerprints, read_sangerids
+from download import download_fingerprints, read_sangerids, digest_sample_lists_directory
 from handprint import fluidigm, sequenom
 from analysis import generate_missingness_stats, generate_LD_stats, generate_MAF_stats, get_counts_from_csv
 import utils
@@ -7,7 +7,8 @@ import sys
 from glob import glob
 import pickle
 
-def download_collate_to_vcf_kinship(sample_list_path, out_directory, 
+def download_collate_to_vcf_kinship(
+    sample_lists_to_download_directory, out_directory, 
     reference_vcf_path, reference_snp_pickle, chromosomes, 
     vcf_from_plex_bin, bcftools_bin, baton_bin, baton_metaquery_bin, 
     baton_get_bin, akt, info_include_path, irods_credentials_path=None,
@@ -85,28 +86,36 @@ def download_collate_to_vcf_kinship(sample_list_path, out_directory,
 
     print(f'Starting at {pipeline_entry_name} in pipeline.')
 
-    fingerprint_directory = os.path.join(out_directory, 'fingerprints')
+    fingerprints_directory = os.path.join(out_directory, 'fingerprints')
 
     if pipeline_entry <= PIPELINE_STEPS['download']:
         # Make sure directory doesn't already exist - we want to start from
         # fresh.
-        if os.path.exists(out_directory):
-            print(f'Error: {out_directory} already exists. Please provide '
-                'a path to nonexistent directory to deposit results.')
-            sys.exit(-1)
+        # if os.path.exists(out_directory):
+        #     print(f'Error: {out_directory} already exists. Please provide '
+        #         'a path to nonexistent directory to deposit results.')
+        #     sys.exit(-1)
 
         # Download raw fingerprints from iRODS
-        os.mkdir(out_directory)
-        os.mkdir(fingerprint_directory)
-        for fingerprint_method in utils.FINGERPRINT_METHODS:
-            # Create directory for method
-            fingerprint_method_directory = os.path.join(
-                fingerprint_directory,fingerprint_method)
-            os.mkdir(fingerprint_method_directory)
-            download_fingerprints(sample_list_path, 
-                fingerprints_directory, fingerprint_method,
-                baton_bin, baton_metaquery_bin, baton_get_bin,
-                n_max_processes)
+        os.makedirs(out_directory, exist_ok=True)
+        os.makedirs(fingerprints_directory, exist_ok=True)
+        
+        sample_list_irods_db_path = os.path.join(out_directory, 'sample_list_irods.json')
+
+        digest_sample_lists_directory(
+            sample_lists_to_download_directory, sample_list_irods_db_path,
+            fingerprints_directory, baton_bin,
+            baton_metaquery_bin, baton_get_bin, irods_credentials_path,
+            n_max_processes)
+        # for fingerprint_method in utils.FINGERPRINT_METHODS:
+        #     # Create directory for method
+        #     fingerprint_method_directory = os.path.join(
+        #         fingerprint_directory,fingerprint_method)
+        #     os.makedirs((fingerprint_method_directory, exist_ok=True)
+        #     download_fingerprints(sample_list_path, 
+        #         fingerprints_directory, fingerprint_method,
+        #         baton_bin, baton_metaquery_bin, baton_get_bin,
+        #         n_max_processes)
 
     handprint_directory = os.path.join(out_directory, 'handprints')
     # Generate handprints from downloaded
