@@ -52,9 +52,9 @@ def digest_sample_lists_directory(
         file = os.path.join(directory, file)
         if not os.path.isfile(file):
             print(file, ' is not a file')
+            continue
         if not db.is_sanger_sample_list_seen(file):
-            # for fingerprint_method in utils.FINGERPRINT_METHODS:
-            for fingerprint_method in ['fluidigm']:
+            for fingerprint_method in utils.FINGERPRINT_METHODS:
                 fingerprint_method_directory = os.path.join(
                     fingerprints_directory, fingerprint_method)
                 download_fingerprints(file,
@@ -64,6 +64,18 @@ def digest_sample_lists_directory(
             db.set_sanger_sample_list_seen(file)
 
     db.close_db()
+
+
+def get_all_sangerids_from_sample_lists_directory(directory):
+    sangerids = set()
+    dir_contents = os.listdir(directory)
+    for file in dir_contents:
+        file = os.path.join(directory, file)
+        if not os.path.isfile(file):
+            print(file, ' is not a file')
+            continue
+        sangerids.update(read_sangerids(file))
+    return sangerids
 
 
 def read_sangerids(sample_list_path):

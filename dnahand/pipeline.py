@@ -1,4 +1,4 @@
-from download import download_fingerprints, read_sangerids, digest_sample_lists_directory
+from download import download_fingerprints, read_sangerids, digest_sample_lists_directory, get_all_sangerids_from_sample_lists_directory
 from handprint import fluidigm, sequenom
 from analysis import generate_missingness_stats, generate_LD_stats, generate_MAF_stats, get_counts_from_csv
 import utils
@@ -6,13 +6,15 @@ import os
 import sys
 from glob import glob
 import pickle
+import shutil
 
 def download_collate_to_vcf_kinship(
     sample_lists_to_download_directory, out_directory, 
     reference_vcf_path, reference_snp_pickle, chromosomes, 
     vcf_from_plex_bin, bcftools_bin, baton_bin, baton_metaquery_bin, 
-    baton_get_bin, akt, info_include_path, irods_credentials_path=None,
-    n_max_processes=25, plink_bin=None, pipeline_entry_name='download'):
+    baton_get_bin, akt, info_include_path, nsnps=10, minkin=0.4,
+    irods_credentials_path=None, n_max_processes=25, plink_bin=None,
+    pipeline_entry_name='download'):
     """
     Args:
         sample_list_path (str): Path to a headerless text file which
@@ -117,16 +119,17 @@ def download_collate_to_vcf_kinship(
         #         baton_bin, baton_metaquery_bin, baton_get_bin,
         #         n_max_processes)
 
-    handprint_directory = os.path.join(out_directory, 'handprints')
+    handprints_directory = os.path.join(out_directory, 'handprints')
     # Generate handprints from downloaded
     if pipeline_entry <= PIPELINE_STEPS['makehandprints']:
-        os.mkdir(handprint_directory)
+        shutil.rmtree(handprints_directory)
+        os.mkdir(handprints_directory)
         for fingerprint_method in utils.FINGERPRINT_METHODS:
             fingerprint_method_directory = os.path.join(
-                fingerprint_directory,
+                fingerprints_directory,
                 fingerprint_method)
             handprint_method_directory = os.path.join(
-                handprint_directory,
+                handprints_directory,
                 fingerprint_method)
             if fingerprint_method == 'fluidigm':
                 fluidigm.generate(fingerprint_method_directory,
@@ -139,11 +142,12 @@ def download_collate_to_vcf_kinship(
     print(vcf_directory)
     # Convert handprints to VCFs
     if pipeline_entry <= PIPELINE_STEPS['plex2vcf']:
+        shutil.rmtree(vcf_directory)
         os.mkdir(vcf_directory)
         # log_directory = os.path.join(out_directory, 'logs')
         # os.mkdir(log_directory)
         for fingerprint_method in utils.FINGERPRINT_METHODS:
-            handprint_method_directory = os.path.join(handprint_directory,
+            handprint_method_directory = os.path.join(handprints_directory,
                 fingerprint_method)
             handprints = utils.get_subdirectories(
                 handprint_method_directory)
@@ -264,28 +268,36 @@ def download_collate_to_vcf_kinship(
     
     if pipeline_entry <= PIPELINE_STEPS['check_sampleids']:
         print('Checking number of the Sanger sample IDs present in the final merged VCF.')
-        sample_ids_for_lookup = read_sangerids(sample_list_path)
+        sample_ids_for_lookup = get_all_sangerids_from_sample_lists_directory(sample_lists_to_download_directory)
         sample_ids_for_lookup = {sampleid.lower() for sampleid in sample_ids_for_lookup if sampleid}
         n_sample_ids_for_lookup = len(sample_ids_for_lookup)
         sample_ids_from_vcf = utils.get_sample_ids_from_vcf(vcf_merged_path)
-        n_included = len(sample_ids_from_vcf & sample_ids_for_lookup)
-        n_not_included = len(sample_ids_for_lookup) - n_included
+        included = sample_ids_from_vcf & sample_ids_for_lookup
+        n_included = len(included)
+        not_included = sample_ids_for_lookup - included
+        n_not_included = len(not_included)
         print(f'...N included {n_included} / {n_sample_ids_for_lookup}')
         print(f'...N not included {n_not_included} / {n_sample_ids_for_lookup}')
-        assert n_included == n_sample_ids_for_lookup
+        if n_not_included:
+            s = ','.join(not_included)
+            print(f'......{s}')
+
 
     # Run akt
     kinship_directory = os.path.join(out_directory, 'kinship')
     kinship_results = os.path.join(kinship_directory, 'kinship_results_minkin_0.1.csv')
     if pipeline_entry <= PIPELINE_STEPS['kinship']:
+        shutil.rmtree(kinship_directory)
         os.makedirs(kinship_directory, exist_ok=True)
-        kinship_results = os.path.join(kinship_directory, 'kinship_results_minkin_0.4.csv')
-        command = f'{akt} kin --method 0 {vcf_merged_path} --force --minkin {0.4} > {kinship_results}'
+        kinship_results = os.path.join(kinship_directory, f'kinship_results_minkin_{minkin}_nsnps_{nsnps}.csv')
+        command = f'{akt} kin --method 0 {vcf_merged_path} --force --minkin {minkin} |'
+        command += f'awk \'{{OFS=","}} {{ if ($7 >= {nsnps}) print $1, $2, $6, $7; }}\' > {kinship_results}'
         utils.run(command)
 
-    analysis_directory = os.path.join(out_directory, 'analysis')
-    if pipeline_entry <= PIPELINE_STEPS['analysis']:
-        os.makedirs(analysis_directory, exist_ok=True)
-        reference_samples = utils.get_sample_ids_from_vcf(subsetted_reference_vcf)
-        handprint_samples = utils.get_sample_ids_from_vcf(vcf_merged_handprints_path)
-        get_counts_from_csv(kinship_results, reference_samples, handprint_samples, analysis_directory)
+
+    # analysis_directory = os.path.join(out_directory, 'analysis')
+    # if pipeline_entry <= PIPELINE_STEPS['analysis']:
+    #     os.makedirs(analysis_directory, exist_ok=True)
+    #     reference_samples = utils.get_sample_ids_from_vcf(subsetted_reference_vcf)
+    #     handprint_samples = utils.get_sample_ids_from_vcf(vcf_merged_handprints_path)
+    #     get_counts_from_csv(kinship_results, reference_samples, handprint_samples, analysis_directory)

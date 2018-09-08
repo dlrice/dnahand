@@ -30,10 +30,10 @@ class FingerprintRow(object):
     def set_assay(self, assay):
         self.row['assay'] = assay
     
-    def reset_assay(self):
-        assay = self.get_assay()
-        _, a = assay.split('-')
-        assay = f'S000-{a}'
+    def reset_assay(self, assay):
+        # assay = self.get_assay()
+        # _, a = assay.split('-')
+        assay = f'S000-A{assay:02}'
         self.set_assay(assay)
     
     def get_row(self):
@@ -103,7 +103,7 @@ def get_sangerid_2_bestfingerprintrows(
 
 
 def write_fingerprint(fingerprint_rows, fieldnames, path):
-    [x.reset_assay() for x in fingerprint_rows]
+    [x.reset_assay(i) for i, x in enumerate(fingerprint_rows)]
     fingerprint_rows = sorted(fingerprint_rows, key=lambda x: x.get_assay())
     with open(path, 'w') as f:
         writer = DictWriter(f, fieldnames, delimiter='\t')

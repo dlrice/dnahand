@@ -29,7 +29,6 @@ def main():
 
     # pipeline arguments
     parser.add_argument('--sample_lists_to_download_directory')
-    parser.add_argument('--sample_list_path')
     parser.add_argument('--out_directory')
     parser.add_argument('--reference_vcf_path')
     parser.add_argument('--reference_snp_pickle')
@@ -44,6 +43,8 @@ def main():
     parser.add_argument('--pipeline_entry_name')
     parser.add_argument('--akt')
     parser.add_argument('--plink_bin')
+    parser.add_argument('--nsnps')
+    parser.add_argument('--minkin')
 
     # generate_snp_data_pickle arguments
     # --reference-vcf-path
@@ -68,7 +69,7 @@ def main():
         )
     elif args.task == 'pipeline':
         download_collate_to_vcf_kinship(
-            sample_list_path=args.sample_list_path,
+            sample_lists_to_download_directory=args.sample_lists_to_download_directory,
             out_directory=args.out_directory,
             reference_vcf_path=args.reference_vcf_path,
             reference_snp_pickle=args.reference_snp_pickle,
