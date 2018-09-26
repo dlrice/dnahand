@@ -114,8 +114,9 @@ def main():
             baton_metaquery_bin=args.baton_metaquery_bin,
             baton_get_bin=args.baton_get_bin,
             irods_credentials_path=args.irods_credentials_path,
+            pipeline_entry_name=args.pipeline_entry_name,
             akt=args.akt,
-            plink_bin=args.plink_bin
+            plink_bin=args.plink_bin,
         )
 
 

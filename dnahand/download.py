@@ -3,6 +3,9 @@ import os
 import utils
 import hashlib
 import json
+from getpass import getpass
+
+password = None
 
 class Sanger_Sample_List_iRODS_DB(object):
     def __init__(self, db_path):
@@ -15,11 +18,12 @@ class Sanger_Sample_List_iRODS_DB(object):
 
     def is_sanger_sample_list_seen(self, sanger_sample_list_path):
         path_hash = self.get_sha512_for_file(sanger_sample_list_path)
-        return path_hash in self.db
+        return path_hash in self.db.values()
 
     def set_sanger_sample_list_seen(self, sanger_sample_list_path):
         path_hash = self.get_sha512_for_file(sanger_sample_list_path)
-        self.db[path_hash] = True
+        filename = os.path.basename(sanger_sample_list_path)
+        self.db[filename] = path_hash
 
     def get_sha512_for_file(self, filepath):
         sha512 = hashlib.sha512()
@@ -29,17 +33,19 @@ class Sanger_Sample_List_iRODS_DB(object):
 
     def close_db(self):
         with open(self.db_path, 'w') as f:
-            json.dump(self.db, f)
+            json.dump(self.db, f, indent=4)
+
 
 def digest_sample_lists_directory(
-        directory, sample_list_irods_db_path, fingerprints_directory, 
-        baton_bin, baton_metaquery_bin, 
+        directory, sample_list_irods_db_path, fingerprints_directory,
+        baton_bin, baton_metaquery_bin,
         baton_get_bin, irods_credentials_path, n_max_processes=25):
     """
     1. Get the directory of files that list the sample ids to download.
     2. For all files that have not been seen before, download and update shelve
-    3. 
+    3.
     """
+    print(f'Looking in {directory} to see what needs to be downloaded but skipping entries found in {sample_list_irods_db_path}.')
     db = Sanger_Sample_List_iRODS_DB(sample_list_irods_db_path)
 
     for fingerprint_method in utils.FINGERPRINT_METHODS:
@@ -62,6 +68,8 @@ def digest_sample_lists_directory(
                     baton_bin, baton_metaquery_bin, baton_get_bin,
                     irods_credentials_path, n_max_processes)
             db.set_sanger_sample_list_seen(file)
+        else:
+            print(f'...{file} already sample IDs already downloaded.')
 
     db.close_db()
 
@@ -85,7 +93,7 @@ def read_sangerids(sample_list_path):
 
 def download_fingerprints(
         sample_list_path, fingerprints_directory, fingerprint_method,
-        baton_bin, baton_metaquery_bin, baton_get_bin, 
+        baton_bin, baton_metaquery_bin, baton_get_bin,
         irods_credentials_path, n_max_processes=25,
     ):
     """
@@ -94,7 +102,7 @@ def download_fingerprints(
             lists the Sanger sample IDs to download.
         out_directory (str): Directory where the fingerprints will be
             saved. If already exists returns error.
-        fingerprint_method (str, optional): Fingerprint type either: 
+        fingerprint_method (str, optional): Fingerprint type either:
             'sequenome', 'fluidigm', or 'both'. Defaults to 'both'.
         irods_credentials_path (str, optional): Path to a text file
             containing user's irods password. If not supplied, user will
@@ -111,7 +119,7 @@ def download_fingerprints(
 
     # Get Sanger Sample IDs
     sangerids = read_sangerids(sample_list_path)
-    print(f'...found {len(sangerids)} Sanger IDs')
+    print(f'...downloading  {len(sangerids)} Sanger IDs from {sample_list_path}')
 
     login_to_irods(irods_credentials_path)
 
@@ -124,7 +132,7 @@ def download_fingerprints(
     for sangerid in sangerids:
         command = (f'{baton_bin} -a sample -v {sangerid} -o = -a {fingerprint_method}_plate -v % -o like |'
             f'{baton_metaquery_bin} -z seq | jq \'.[]\' | {baton_get_bin} --save')
-        print(command)
+        # print(command)
         processes.add(subprocess.Popen(command, shell=True))
         if len(processes) >= n_max_processes:
             os.wait()
@@ -132,12 +140,14 @@ def download_fingerprints(
 
     for p in processes:
        p.wait()
-    
+
 
 def login_to_irods(path=None):
-    if path:
-        with open(path) as f:
-            password = f.readline().strip()
-        os.system('kinit <<< {}'.format(password))
-    else:
-        os.system('kinit <<< {}'.format(getpass('enter kinit password: ')))
+    global password
+    if not password:
+        if path:
+            with open(path) as f:
+                password = f.readline().strip()
+        else:
+            password = getpass('enter kinit password: ')
+    os.system('kinit <<< {}'.format(password))

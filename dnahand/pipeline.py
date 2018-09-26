@@ -9,9 +9,9 @@ import pickle
 import shutil
 
 def download_collate_to_vcf_kinship(
-    sample_lists_to_download_directory, out_directory, 
-    reference_vcf_path, reference_snp_pickle, chromosomes, 
-    vcf_from_plex_bin, bcftools_bin, baton_bin, baton_metaquery_bin, 
+    sample_lists_to_download_directory, out_directory,
+    reference_vcf_path, reference_snp_pickle, chromosomes,
+    vcf_from_plex_bin, bcftools_bin, baton_bin, baton_metaquery_bin,
     baton_get_bin, akt, info_include_path, nsnps=10, minkin=0.4,
     irods_credentials_path=None, n_max_processes=25, plink_bin=None,
     pipeline_entry_name='download'):
@@ -64,7 +64,7 @@ def download_collate_to_vcf_kinship(
     TODO
     1. Determine how much the handprints stuff actually helps. How many
        times does one individual have multiple fingerprints?
-    2. Plot 
+    2. Plot
     3. Prune on LD in reference vcf
     """
 
@@ -75,10 +75,9 @@ def download_collate_to_vcf_kinship(
         'download': 0,
         'makehandprints': 1,
         'plex2vcf': 2,
-        'mergevcfs': 3,
-        'check_sampleids': 4,
-        'kinship': 5,
-        'analysis': 6,
+        'check_sampleids': 3,
+        'kinship': 4,
+        'analysis': 5,
     }
 
     assert pipeline_entry_name in PIPELINE_STEPS, \
@@ -101,7 +100,7 @@ def download_collate_to_vcf_kinship(
         # Download raw fingerprints from iRODS
         os.makedirs(out_directory, exist_ok=True)
         os.makedirs(fingerprints_directory, exist_ok=True)
-        
+
         sample_list_irods_db_path = os.path.join(out_directory, 'sample_list_irods.json')
 
         digest_sample_lists_directory(
@@ -114,7 +113,7 @@ def download_collate_to_vcf_kinship(
         #     fingerprint_method_directory = os.path.join(
         #         fingerprint_directory,fingerprint_method)
         #     os.makedirs((fingerprint_method_directory, exist_ok=True)
-        #     download_fingerprints(sample_list_path, 
+        #     download_fingerprints(sample_list_path,
         #         fingerprints_directory, fingerprint_method,
         #         baton_bin, baton_metaquery_bin, baton_get_bin,
         #         n_max_processes)
@@ -122,7 +121,7 @@ def download_collate_to_vcf_kinship(
     handprints_directory = os.path.join(out_directory, 'handprints')
     # Generate handprints from downloaded
     if pipeline_entry <= PIPELINE_STEPS['makehandprints']:
-        shutil.rmtree(handprints_directory)
+        shutil.rmtree(handprints_directory, ignore_errors=True)
         os.mkdir(handprints_directory)
         for fingerprint_method in utils.FINGERPRINT_METHODS:
             fingerprint_method_directory = os.path.join(
@@ -140,9 +139,15 @@ def download_collate_to_vcf_kinship(
 
     vcf_directory = os.path.join(out_directory, 'vcfs')
     print(vcf_directory)
+    vcf_merged_path = os.path.join(vcf_directory, 'all_merged.vcf.gz')
+    subsetted_reference_vcf = os.path.join(vcf_directory,
+        'subsetted_reference.vcf.gz')
+    vcf_merged_handprints_path = os.path.join(vcf_directory,
+        'handprints.vcf.gz')
+    
     # Convert handprints to VCFs
     if pipeline_entry <= PIPELINE_STEPS['plex2vcf']:
-        shutil.rmtree(vcf_directory)
+        shutil.rmtree(vcf_directory, ignore_errors=True)
         os.mkdir(vcf_directory)
         # log_directory = os.path.join(out_directory, 'logs')
         # os.mkdir(log_directory)
@@ -163,7 +168,7 @@ def download_collate_to_vcf_kinship(
 
             for handprint in handprints:
                 filelist = os.path.join(handprint, f'filelist.txt')
-                
+
                 snpset = os.path.join(handprint, 'snpset.tsv')
                 handprint = os.path.normpath(handprint)
                 handprint = os.path.basename(handprint)
@@ -181,15 +186,15 @@ def download_collate_to_vcf_kinship(
                     chromosomes, fingerprint_method, snpset, vcf_out)
                 utils.convert_sampleids_to_lowercase_vcf(vcf_out)
 
-    # Merge all VCFs
-    vcf_merged_path = os.path.join(vcf_directory, 'all_merged.vcf.gz')
-    subsetted_reference_vcf = os.path.join(vcf_directory, 
-        'subsetted_reference.vcf.gz')
-    vcf_merged_handprints_path = os.path.join(vcf_directory, 
-        'handprints.vcf.gz')
-    if pipeline_entry <= PIPELINE_STEPS['mergevcfs']:
+        # Removing this because it is difficult to restart:
+        #
+        # if pipeline_entry <= PIPELINE_STEPS['mergevcfs']:
+        #
+
+        # Merge all VCFs
         handprint_vcfs = glob(os.path.join(vcf_directory, '*', '*'))
-        print(handprint_vcfs)
+        print('Handprint VCFs found:')
+        print('\n'.join(handprint_vcfs))
         n_handprint_vcfs = len(handprint_vcfs)
         if not n_handprint_vcfs:
             print('Error: No handprint VCFs found to merge.')
@@ -197,20 +202,18 @@ def download_collate_to_vcf_kinship(
 
         print(f'Found {n_handprint_vcfs} handprint VCFs to merge')
 
-        vcf_subset_path = os.path.join(vcf_directory,
-        f'subsetted_reference.vcf.gz')
-        subsetted_reference_vcf = os.path.join(vcf_directory, 
+        subsetted_reference_vcf = os.path.join(vcf_directory,
             'subsetted_reference.vcf.gz')
-        # Subset reference on only those SNPs seen in all of the 
+        # Subset reference on only those SNPs seen in all of the
         # handprint_vcfs
         utils.subset_reference_vcfs_on_handprint_snps(handprint_vcfs,
             reference_snp_pickle, reference_vcf_path,
             subsetted_reference_vcf)
         utils.index_vcf(subsetted_reference_vcf)
-        
+
         # utils.concat_vcfs(subsetted_referenence_vcfs, referenence_vcf)
-        
-        
+
+
         # Remove samples in handprints already present in reference - these
         # will be much higher quality in the imputed reference
         handprint_vcfs = utils.filter_duplicate_individuals(
@@ -254,9 +257,9 @@ def download_collate_to_vcf_kinship(
 
         # Filter out low MAF variants
         i = vcf_merged_path.rfind('.vcf')
-        root = vcf_merged_path[:i] 
+        root = vcf_merged_path[:i]
         frq_path = f'{root}.frq'
-        maf_out = f'{root}.maf.out' 
+        maf_out = f'{root}.maf.out'
         utils.get_MAF_exclude_list(frq_path, maf_out)
         utils.prune_by_rsid(vcf_merged_path, maf_out)
         utils.index_vcf(vcf_merged_path)
@@ -265,7 +268,7 @@ def download_collate_to_vcf_kinship(
         # Filter out low INFO variants
         utils.include_by_region_file(vcf_merged_path, info_include_path)
         utils.index_vcf(vcf_merged_path)
-    
+
     if pipeline_entry <= PIPELINE_STEPS['check_sampleids']:
         print('Checking number of the Sanger sample IDs present in the final merged VCF.')
         sample_ids_for_lookup = get_all_sangerids_from_sample_lists_directory(sample_lists_to_download_directory)
@@ -285,7 +288,6 @@ def download_collate_to_vcf_kinship(
 
     # Run akt
     kinship_directory = os.path.join(out_directory, 'kinship')
-    kinship_results = os.path.join(kinship_directory, 'kinship_results_minkin_0.1.csv')
     if pipeline_entry <= PIPELINE_STEPS['kinship']:
         shutil.rmtree(kinship_directory)
         os.makedirs(kinship_directory, exist_ok=True)
@@ -301,3 +303,5 @@ def download_collate_to_vcf_kinship(
     #     reference_samples = utils.get_sample_ids_from_vcf(subsetted_reference_vcf)
     #     handprint_samples = utils.get_sample_ids_from_vcf(vcf_merged_handprints_path)
     #     get_counts_from_csv(kinship_results, reference_samples, handprint_samples, analysis_directory)
+
+
